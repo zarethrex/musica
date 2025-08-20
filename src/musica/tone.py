@@ -1,13 +1,15 @@
 """Defines classes relating to musical tonality."""
 
 import dataclasses
-from typing import Literal, Self, Iterable
+import time
+import functools
+import platform
+import pygame.midi
+
+from typing import Literal, Self, Iterable, Generator, cast
 from musica.custom_types import CyclicList
 
 CHROMATIC_SCALE = CyclicList(
-    "A",
-    "A#",
-    "B",
     "C",
     "C#",
     "D",
@@ -17,34 +19,60 @@ CHROMATIC_SCALE = CyclicList(
     "F#",
     "G",
     "G#",
+    "A",
+    "A#",
+    "B",
 )
 
 MAJOR_INTERVAL = CyclicList(2, 2, 1, 2, 2, 2, 1)
 BLUES_INTERVAL = CyclicList(3, 2, 1, 1, 3, 2)
 
 
+@functools.lru_cache
+def get_audio_driver() -> pygame.midi.Output:
+    """Retrieve MIDI Output device."""
+    pygame.midi.init()
+    _device_map: dict[str, str] = {"Windows": "Microsoft GS Wavetable Synth"}
+    _device_name: str = _device_map[platform.system()]
+    for i in range(pygame.midi.get_count()):
+        info = pygame.midi.get_device_info(i)
+        _, name, __, output, *___ = info
+        if output and _device_name in name.decode():
+            return pygame.midi.Output(i)
+    return pygame.midi.Output(0)
+
+
 class Chord:
     def __init__(
         self,
-        triad: tuple["Note", "Note", "Note"],
-        chord_type: Literal["maj", "min", "dim"] | None = None,
+        notes: tuple["Note", ...],
+        chord_suffix: str | None = None,
     ):
-        self.name = f"{triad[0]}{chord_type or ''}"
-        self.triad = triad
+        self.name = f"{notes[0]}{chord_suffix or ''}"
+        self.notes = notes
+
+    def play(self, duration: int = 1, loudness_percent: int = 100) -> None:
+        _player = get_audio_driver()
+        _velocity = loudness_percent * 127 // 100
+        for note in self.notes:
+            _player.note_on(note.note_index, _velocity)
+        time.sleep(duration)
+        _player.note_off(100)
 
     def __getitem__(self, index: int) -> "Note":
-        return self.triad[index]
+        return self.notes[index]
 
     def __str__(self) -> str:
-        return self.name
+        return f"Chord(self.name, [{', '.join(str(n) for n in self.notes)}])"
 
     def __repr__(self) -> str:
-        return f"Chord(name={self.name}, triad={[str(n) for n in self.triad]})"
+        return f"Chord(name={self.name}, triad={[str(n) for n in self.notes]})"
 
 
 @dataclasses.dataclass
 class Note:
     label: str
+    octave: int = 4
 
     def diminish(self) -> Self:
         _scale = self.chromatic_scale.copy(reverse=True)
@@ -57,55 +85,72 @@ class Note:
         return next(_scale)
 
     def __str__(self) -> str:
-        return self.label
+        return f"{self.label}{self.octave}"
 
-    def _triad(
-        self, scale_generator: Iterable[Self], label: Literal["maj", "min", "dim"]
+    def _make_chord(
+        self,
+        scale_generator: CyclicList[Self],
+        label: Literal["maj", "min", "dim"],
+        size: int = 3,
+        rank: int | None = None
     ) -> Chord:
         _output: list[Note] = []
-        _output.append(next(scale_generator))
-        next(scale_generator)
-        _output.append(next(scale_generator))
-        next(scale_generator)
-        _output.append(next(scale_generator))
-        return Chord(_output, label)
+        _next_item: Self = next(scale_generator)
+        _output.append(_next_item)
+
+        for _ in range(size-1):
+            next(scale_generator)
+            _output.append(next(scale_generator))
+        _chord = cast(tuple[Note, Note, Note], _output)
+        return Chord(_chord, f"{label}{str(rank) if rank else ''}")
 
     @property
-    def major_scale(self) -> Iterable[Self]:
+    def note_index(self) -> int:
+        return 12 * (self.octave + 1) + CHROMATIC_SCALE.index(self.label)
+
+    def play(self, duration: int = 1, loudness_percent: int = 100) -> None:
+        _velocity = loudness_percent * 127 // 100
+        _player = get_audio_driver()
+        _player.note_on(self.note_index, _velocity)
+        time.sleep(duration)
+        _player.note_off(100)
+
+    @property
+    def major_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(intervals=MAJOR_INTERVAL[:-1])
 
     @property
-    def dorian_scale(self) -> Iterable[Self]:
+    def dorian_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=1)[:-1]
         )
 
     @property
-    def phrygian_scale(self) -> Iterable[Self]:
+    def phrygian_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=2)[:-1]
         )
 
     @property
-    def lydian_scale(self) -> Iterable[Self]:
+    def lydian_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=3)[:-1]
         )
 
     @property
-    def mixolydian_scale(self) -> Iterable[Self]:
+    def mixolydian_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=4)[:-1]
         )
 
     @property
-    def minor_scale(self) -> Iterable[Self]:
+    def minor_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=5)[:-1]
         )
 
     @property
-    def ionian_scale(self) -> Iterable[Self]:
+    def ionian_scale(self) -> CyclicList[Self]:
         return self.chromatic_scale.custom_iter(
             intervals=MAJOR_INTERVAL.copy(start_index=6)[:-1]
         )
@@ -127,16 +172,24 @@ class Note:
         return self.major_scale[5]
 
     @property
-    def major_triad(self) -> tuple[Self, Self, Self]:
-        return self._triad(self.major_scale, "maj")
+    def major_triad(self) -> Chord:
+        return self._make_chord(self.major_scale, "maj")
 
     @property
-    def minor_triad(self) -> tuple[Self, Self, Self]:
-        return self._triad(self.minor_scale, "min")
+    def minor_triad(self) -> Chord:
+        return self._make_chord(self.minor_scale, "min")
+    
+    @property
+    def major_seventh(self) -> Chord:
+        return self._make_chord(self.major_scale, label="maj", size=4, rank=7)
 
     @property
-    def diminished_triad(self) -> tuple[Self, Self, Self]:
-        return self._triad(self.ionian_scale, "dim")
+    def minor_seventh(self) -> Chord:
+        return self._make_chord(self.minor_scale, label="min", size=4, rank=7)
+
+    @property
+    def diminished_triad(self) -> Chord:
+        return self._make_chord(self.ionian_scale, "dim")
 
     @property
     def blues_scale(self) -> Iterable[Self]:
@@ -147,15 +200,15 @@ class Note:
         return CHROMATIC_SCALE.index(self.label)
 
     @property
-    def chromatic_scale(self) -> CyclicList:
-        return CHROMATIC_SCALE.map(Note).copy(start_index=self.index)
+    def chromatic_scale(self) -> CyclicList[Self]:
+        return CyclicList(
+            *(self.__class__(n) for n in CHROMATIC_SCALE), start_index=self.index
+        )
 
     @property
-    def major_chords(self) -> CyclicList:
-        def _compare(other: Note, this: Note = self) -> tuple[Note, Note, Note]:
-            _triad_self = this.major_triad
+    def major_triads(self) -> Generator[Chord, None, None]:
+        def _compare(other: Note, this: Note = self) -> Chord: 
             _triad_other = other.major_triad
-            _triad_other_minor = other.minor_triad
             if _triad_other[1].diminish() not in this.major_scale:
                 return other.major_triad
             if (
@@ -191,8 +244,8 @@ def circle_of_fifths() -> str:
     _inner_start: str = "A"
     _iterable_outer = Note(_outer_start)
     _iterable_inner = Note(_inner_start)
-    _outer_list: list[Note] = [f"{str(_iterable_outer):^2}"]
-    _inner_list: list[Note] = [f"{str(_iterable_inner):^2}"]
+    _outer_list: list[str] = [f"{str(_iterable_outer):^2}"]
+    _inner_list: list[str] = [f"{str(_iterable_inner):^2}"]
     _iterable_outer = _iterable_outer.major_triad[2]
     _iterable_inner = _iterable_inner.major_triad[2]
 
@@ -206,5 +259,4 @@ def circle_of_fifths() -> str:
 
 
 if __name__ in "__main__":
-    print(list(Note("C").major_chords))
-    print(list(Note("A").major_chords))
+    print(Note("C").minor_seventh)
