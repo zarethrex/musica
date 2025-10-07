@@ -32,7 +32,10 @@ BLUES_INTERVAL = CyclicList(3, 2, 1, 1, 3, 2)
 def get_audio_driver() -> pygame.midi.Output:
     """Retrieve MIDI Output device."""
     pygame.midi.init()
-    _device_map: dict[str, str] = {"Windows": "Microsoft GS Wavetable Synth"}
+    _device_map: dict[str, str] = {
+        "Windows": "Microsoft GS Wavetable Synth",
+        "Linux": "Midi Through",
+    }
     _device_name: str = _device_map[platform.system()]
     for i in range(pygame.midi.get_count()):
         info = pygame.midi.get_device_info(i)
@@ -214,7 +217,7 @@ class Note:
 
     @property
     def major_triads(self) -> Generator[Chord, None, None]:
-        def _compare(other: Note, this: Note = self) -> Chord: 
+        def _compare(other: Note, this: Note = self) -> Chord:
             _triad_other = other.major_triad
             if _triad_other[1].diminish() not in this.major_scale:
                 return other.major_triad

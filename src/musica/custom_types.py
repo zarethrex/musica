@@ -13,6 +13,7 @@ _UNDEFINED = object()
 
 class CyclicList(collections.abc.Iterable[T]):
     """Provides an infinite iterable allowing the user to repeatedly redraw values."""
+
     def __init__(
         self,
         *values: T,
@@ -22,7 +23,7 @@ class CyclicList(collections.abc.Iterable[T]):
         start_index: int | None = None,
     ) -> None:
         """Initialise a new CyclicList using the given values.
-        
+
         Parameters
         ----------
         *values: object
@@ -52,7 +53,7 @@ class CyclicList(collections.abc.Iterable[T]):
 
     def map(self: C, func: Callable[[T], object]) -> "C":
         """Map a function to each element in the iterable and return a new instance."""
-        return self.__class__(*map(func, self._values)) 
+        return self.__class__(*map(func, self._values))
 
     def copy(
         self,
@@ -63,7 +64,7 @@ class CyclicList(collections.abc.Iterable[T]):
         counts: int | None = None,
     ) -> Self:
         """Create a copy of this iterable with new values.
-        
+
         Parameters
         ----------
         *args
@@ -81,7 +82,9 @@ class CyclicList(collections.abc.Iterable[T]):
         CyclicList
             a new iterable with these options
         """
-        _start_index: int | None = start_index if start_index is not None else self._start_index
+        _start_index: int | None = (
+            start_index if start_index is not None else self._start_index
+        )
         if reverse or (reverse is None and self._reverse):
             _start_index = len(self._values) - _start_index - 1
         if limit:
@@ -99,7 +102,7 @@ class CyclicList(collections.abc.Iterable[T]):
     def __iter__(self) -> Iterator[T]:
         """Returns a new iterator from this iterable."""
         return self.copy()
-    
+
     def __str__(self) -> str:
         """String format printing."""
         _out_str: str = (
@@ -108,11 +111,17 @@ class CyclicList(collections.abc.Iterable[T]):
         )
 
         if self._limit:
-            return _out_str + f", limit={len(self._values) - 1 if not isinstance(self._limit, int) else self._limit})"
+            return (
+                _out_str
+                + f", limit={len(self._values) - 1 if not isinstance(self._limit, int) else self._limit})"
+            )
         if self._counts:
-            return _out_str + f", counts={1 if not isinstance(self._counts, int) else self._counts})"
+            return (
+                _out_str
+                + f", counts={1 if not isinstance(self._counts, int) else self._counts})"
+            )
         return _out_str + ")"
-    
+
     def __len__(self) -> int | object:
         """Return length of iterable."""
         _length: int = len(self._values)
@@ -153,11 +162,12 @@ class CyclicList(collections.abc.Iterable[T]):
 
         else:
             if self._reverse:
-                index = (len(self._values) - index - 1) % len(self._values)
+                index = (len(self._values) - (self._start_index + index) - 1) % len(
+                    self._values
+                )
             else:
-                index = index % len(self._values)
+                index = (self._start_index + index) % len(self._values)
             return self._values[index]
-        
 
     @functools.lru_cache()
     def index(self, value: T) -> int:
@@ -193,13 +203,13 @@ class CyclicList(collections.abc.Iterable[T]):
         intervals: Union["CyclicList[int]", list[int], None] = None,
         step: int | None = None,
         start_index: int | None = None,
-        counts: int | None = None, 
+        counts: int | None = None,
         limit: int | None = None,
     ) -> Self:
         """Returns a copy of this iteratable with additional configuration.
 
         If values are unspecified they are copied from the class instance.
-        
+
         Parameters
         ----------
         *_
@@ -235,6 +245,11 @@ class CyclicList(collections.abc.Iterable[T]):
                 _index = (_index + interval) % len(self._values)
                 _values.append(_current_value_order[_index])
         return self.copy(*_values, start_index=start_index, counts=counts, limit=limit)
+
+    @property
+    def values(self) -> tuple[T, ...]:
+        """Return the values associated with this cyclic list."""
+        return self._values
 
 
 if __name__ in "__main__":
