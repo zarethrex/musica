@@ -6,7 +6,7 @@ import functools
 import platform
 import pygame.midi
 
-from typing import Literal, Self, Iterable, Generator, cast
+from typing import Self, Iterable, Generator, Literal
 from musica.custom_types import CyclicList
 
 CHROMATIC_SCALE = CyclicList(
@@ -45,7 +45,7 @@ def get_audio_driver() -> pygame.midi.Output:
 class Chord:
     def __init__(
         self,
-        notes: tuple["Note", ...],
+        *notes: "Note",
         chord_suffix: str | None = None,
     ):
         self.name = f"{notes[0]}{chord_suffix or ''}"
@@ -59,14 +59,22 @@ class Chord:
         time.sleep(duration)
         _player.note_off(100)
 
+    def invert(self) -> Self:
+        _upper_note = self.notes[0]
+        _upper_note.octave += 1
+        return self.__class__(*self.notes[1:], _upper_note)
+
     def __getitem__(self, index: int) -> "Note":
         return self.notes[index]
 
     def __str__(self) -> str:
-        return f"Chord(self.name, [{', '.join(str(n) for n in self.notes)}])"
+        return f"Chord({self.name}, [{', '.join(str(n) for n in self.notes)}])"
 
     def __repr__(self) -> str:
         return f"Chord(name={self.name}, triad={[str(n) for n in self.notes]})"
+    
+    def extend(self, *notes: "Note", chord_suffix: str) -> Self:
+        return self.__class__(*self.notes, *notes, chord_suffix=chord_suffix)
 
 
 @dataclasses.dataclass
@@ -86,23 +94,6 @@ class Note:
 
     def __str__(self) -> str:
         return f"{self.label}{self.octave}"
-
-    def _make_chord(
-        self,
-        scale_generator: CyclicList[Self],
-        label: Literal["maj", "min", "dim"],
-        size: int = 3,
-        rank: int | None = None
-    ) -> Chord:
-        _output: list[Note] = []
-        _next_item: Self = next(scale_generator)
-        _output.append(_next_item)
-
-        for _ in range(size-1):
-            next(scale_generator)
-            _output.append(next(scale_generator))
-        _chord = cast(tuple[Note, Note, Note], _output)
-        return Chord(_chord, f"{label}{str(rank) if rank else ''}")
 
     @property
     def note_index(self) -> int:
@@ -158,10 +149,17 @@ class Note:
     @property
     def dominant(self) -> Self:
         return self.major_scale[4]
+    
+    @property
+    def sub_dominant(self) -> Self:
+        return self.major_scale[3]
 
     @property
-    def secondary_dominant(self) -> Self:
-        return self.dominant.dominant
+    def secondary_dominant(self) -> Generator[Self]:
+        for note in self.major_scale:
+            if note == self:
+                continue
+            yield note.dominant
 
     @property
     def aeolian_scale(self) -> Iterable[Self]:
@@ -173,23 +171,32 @@ class Note:
 
     @property
     def major_triad(self) -> Chord:
-        return self._make_chord(self.major_scale, "maj")
+        return Chord(*self.major_scale[:3], chord_suffix="maj")
 
     @property
     def minor_triad(self) -> Chord:
-        return self._make_chord(self.minor_scale, "min")
+        return Chord(*self.minor_scale[:3], chord_suffix="min")
+    
+    def inversion(self, index: Literal[1, 2, 3]) -> Chord:
+        _chord = self.major_triad
+        for _ in range(index):
+            _chord = _chord.invert()
+        return _chord
     
     @property
     def major_seventh(self) -> Chord:
-        return self._make_chord(self.major_scale, label="maj", size=4, rank=7)
+        return Chord(*self.major_scale.custom_iter(step=2, limit=4), chord_suffix="maj7")
 
     @property
     def minor_seventh(self) -> Chord:
-        return self._make_chord(self.minor_scale, label="min", size=4, rank=7)
+        return Chord(*self.minor_scale.custom_iter(step=2, limit=4), chord_suffix="min7")
 
     @property
+    def dominant_seventh(self) -> Chord:
+        return Chord(*self.major_scale.custom_iter(step=2, limit=3), self.minor_scale.custom_iter(step=2, limit=4)[-1], chord_suffix="dom7")
+    @property
     def diminished_triad(self) -> Chord:
-        return self._make_chord(self.ionian_scale, "dim")
+        return Chord(*self.ionian_scale, chord_suffix="dim")
 
     @property
     def blues_scale(self) -> Iterable[Self]:
@@ -257,6 +264,12 @@ def circle_of_fifths() -> str:
 
     return _print_format.format(o=_outer_list, i=_inner_list)
 
-
 if __name__ in "__main__":
-    print(Note("C").minor_seventh)
+    _note = Note("C")
+    print(_note.major_triad)
+    _first_inversion = _note.inversion(1)
+    print(_first_inversion)
+    _first_inversion.play()
+    _first_inversion = _note.inversion(2)
+    print(_first_inversion)
+    _first_inversion.play()

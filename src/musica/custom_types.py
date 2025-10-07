@@ -84,6 +84,10 @@ class CyclicList(collections.abc.Iterable[T]):
         _start_index: int | None = start_index if start_index is not None else self._start_index
         if reverse or (reverse is None and self._reverse):
             _start_index = len(self._values) - _start_index - 1
+        if limit:
+            counts = None
+        elif counts:
+            limit = None
         return self.__class__(
             *(args or self._values),
             limit=limit or self._limit,
